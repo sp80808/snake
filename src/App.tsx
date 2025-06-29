@@ -62,7 +62,7 @@ import {
   PlayerStats, 
   ComboState, 
   XPPopup, 
-  CoinAnimation,
+  CoinAnimation as CoinAnimationType,
   Achievement,
   Challenge,
   AchievementToast as AchievementToastType,
