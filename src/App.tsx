@@ -78,6 +78,10 @@ import { createUpgrades, calculateUpgradeCost, canAffordUpgrade, purchaseUpgrade
 import { createAchievements, createChallenges } from './data/achievements';
 import { createSkins, createThemes } from './data/customization';
 import { useGameAnimations } from './hooks/useGameAnimations';
+import { ResponsiveGameContainer } from './components/ResponsiveGameContainer';
+import { TouchControls } from './components/TouchControls';
+import { AdaptiveUI } from './components/AdaptiveUI';
+import { AccessibleGameGrid } from './components/AccessibleGameGrid';
 
 function App() {
   // Dark mode state
@@ -86,8 +90,8 @@ function App() {
     return saved ? JSON.parse(saved) : false;
   });
 
-  // Game container ref for fullscreen
-  const gameContainerRef = useRef<HTMLDivElement>(null);
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Game animation hooks
   const {
@@ -663,22 +667,161 @@ function App() {
     setIsDarkMode(prev => !prev);
   };
 
-  const toggleGameFullscreen = async () => {
-    if (!gameContainerRef.current) return;
+  const handleFullscreenChange = (fullscreen: boolean) => {
+    setIsFullscreen(fullscreen);
+  };
+
+  const handleTouchDirection = (direction: { x: number; y: number }) => {
+    // Only process if game is running
+    if (!gameState.gameRunning || gameState.gameOver) return;
     
-    try {
-      if (!document.fullscreenElement) {
-        await gameContainerRef.current.requestFullscreen();
-      } else {
-        await document.exitFullscreen();
+    // Update snake direction
+    setGameState(prev => ({
+      ...prev,
+      snake1: {
+        ...prev.snake1,
+        direction
       }
-    } catch (error) {
-      console.error('Fullscreen toggle failed:', error);
-    }
+    }));
   };
 
   const currentTheme = gameState.themes[gameState.currentTheme];
   const currentSkin = gameState.skins[gameState.currentSkin];
+
+  // Header content for adaptive UI
+  const headerContent = (
+    <div className={`flex items-center justify-between ${!isFullscreen ? 'mb-6' : ''} ${
+      isDarkMode ? 'text-white' : ''
+    }`}>
+      {/* Left side - Coins and Level */}
+      <div className="flex items-center gap-2 md:gap-4 flex-wrap">
+        <div className={`backdrop-blur-sm rounded-xl px-3 py-2 shadow-lg text-sm md:text-base ${
+          isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
+        }`}>
+          <div className="flex items-center gap-2">
+            <Coins className="w-4 h-4 md:w-5 md:h-5 text-orange-600" />
+            <span className="font-bold text-orange-600">{gameState.playerStats.coins}</span>
+          </div>
+        </div>
+        
+        <div className={`backdrop-blur-sm rounded-xl px-3 py-2 shadow-lg text-sm md:text-base ${
+          isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
+        }`}>
+          <div className="flex items-center gap-2">
+            <Star className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
+            <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+              Level {gameState.playerStats.level}
+            </span>
+          </div>
+        </div>
+        
+        {gameState.combo.count > 1 && (
+          <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl px-3 py-2 shadow-lg animate-pulse">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 md:w-5 md:h-5 text-white" />
+              <span className="font-bold text-white text-sm md:text-base">{gameState.combo.count}x Combo!</span>
+            </div>
+          </div>
+        )}
+      </div>
+      {/* Center - Score (hidden on mobile in header) */}
+      <div className={`hidden md:block backdrop-blur-sm rounded-xl px-6 py-3 shadow-lg ${
+        isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
+      }`}>
+        <div className="text-center">
+          <div className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+            {gameState.score}
+          </div>
+          <div className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            Score
+          </div>
+        </div>
+      </div>
+        
+      {/* Right side - Menu buttons */}
+      <div className="flex items-center gap-1 md:gap-2">
+        <AnimatedButton
+          onClick={toggleDarkMode}
+          variant="secondary"
+          size="sm"
+          title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        >
+          {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </AnimatedButton>
+        
+        <AnimatedButton
+          onClick={() => setGameState(prev => ({ ...prev, showShop: true }))}
+          variant="secondary"
+          size="sm"
+        >
+          <ShoppingCart className="w-4 h-4" />
+        </AnimatedButton>
+        
+        <AnimatedButton
+          onClick={() => setGameState(prev => ({ ...prev, showCustomization: true }))}
+          variant="secondary"
+          size="sm"
+        >
+          <Palette className="w-4 h-4" />
+        </AnimatedButton>
+        
+        <AnimatedButton
+          onClick={() => setGameState(prev => ({ ...prev, showAchievements: true }))}
+          variant="secondary"
+          size="sm"
+        >
+          <Trophy className="w-4 h-4" />
+        </AnimatedButton>
+        
+        <AnimatedButton
+          onClick={() => setGameState(prev => ({ ...prev, showStats: true }))}
+          variant="secondary"
+          size="sm"
+        >
+          <BarChart3 className="w-4 h-4" />
+        </AnimatedButton>
+      </div>
+    </div>
+  );
+
+  // Footer content for adaptive UI
+  const footerContent = (
+    <>
+      {/* Mobile Score Display */}
+      <div className={`block md:hidden text-center mb-4 ${
+        isDarkMode ? 'text-white' : 'text-gray-800'
+      }`}>
+        <div className="text-3xl font-bold">{gameState.score}</div>
+        <div className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>Score</div>
+      </div>
+
+      {/* Game Controls */}
+      <div className="flex justify-center">
+        <div className={`backdrop-blur-sm rounded-xl p-4 shadow-lg ${
+          isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
+        }`}>
+          <div className="flex items-center justify-center gap-4">
+            {!gameState.gameRunning && !gameState.gameOver ? (
+              <AnimatedButton onClick={toggleGame}>
+                <Play className="w-4 h-4 mr-2" />
+                Start Game
+              </AnimatedButton>
+            ) : gameState.gameRunning ? (
+              <AnimatedButton onClick={toggleGame} variant="secondary">
+                <Pause className="w-4 h-4 mr-2" />
+                Pause
+              </AnimatedButton>
+            ) : null}
+            
+            <AnimatedButton onClick={restartGame} variant="secondary">
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Reset
+            </AnimatedButton>
+          </div>
+        </div>
+      </div>
+    </>
+  );
 
   return (
     <ScreenShake 
@@ -686,189 +829,37 @@ function App() {
       duration={animations.shakeDuration} 
       trigger={animations.shakeTriggered}
     >
-      <div className={`min-h-screen p-4 transition-colors duration-300 ${
-        isDarkMode 
-          ? 'bg-gray-900' 
-          : currentTheme.backgroundColor
-      }`}>
-        <FlashEffect trigger={animations.flashTriggered} />
-        <CongratulatoryAnimation
-          trigger={animations.congratsTriggered}
-          type={animations.congratsType}
-          title={animations.congratsTitle}
-          subtitle={animations.congratsSubtitle}
-        />
-        
-        {/* Header */}
-        <div className={`flex items-center justify-between mb-6 ${
-          isDarkMode ? 'text-white' : ''
-        }`}>
-          {/* Left side - Coins and Level */}
-          <div className="flex items-center gap-4">
-            <div className={`backdrop-blur-sm rounded-xl px-4 py-2 shadow-lg ${
-              isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
-            }`}>
-              <div className="flex items-center gap-2">
-                <Coins className="w-5 h-5 text-orange-600" />
-                <span className="font-bold text-orange-600">{gameState.playerStats.coins}</span>
-              </div>
-            </div>
-            
-            <div className={`backdrop-blur-sm rounded-xl px-4 py-2 shadow-lg ${
-              isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
-            }`}>
-              <div className="flex items-center gap-2">
-                <Star className="w-5 h-5 text-purple-600" />
-                <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-                  Level {gameState.playerStats.level}
-                </span>
-              </div>
-            </div>
-            
-            {gameState.combo.count > 1 && (
-              <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl px-4 py-2 shadow-lg animate-pulse">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-white" />
-                  <span className="font-bold text-white">{gameState.combo.count}x Combo!</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Center - Score */}
-          <div className={`backdrop-blur-sm rounded-xl px-6 py-3 shadow-lg ${
-            isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
-          }`}>
-            <div className="text-center">
-              <div className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-                {gameState.score}
-              </div>
-              <div className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                Score
-              </div>
-            </div>
-          </div>
-
-          {/* Right side - Menu buttons */}
-          <div className="flex items-center gap-2">
-            <AnimatedButton
-              onClick={toggleDarkMode}
-              variant="secondary"
-              size="sm"
-              title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </AnimatedButton>
-            
-            <AnimatedButton
-              onClick={() => setGameState(prev => ({ ...prev, showShop: true }))}
-              variant="secondary"
-              size="sm"
-            >
-              <ShoppingCart className="w-4 h-4" />
-            </AnimatedButton>
-            
-            <AnimatedButton
-              onClick={() => setGameState(prev => ({ ...prev, showCustomization: true }))}
-              variant="secondary"
-              size="sm"
-            >
-              <Palette className="w-4 h-4" />
-            </AnimatedButton>
-            
-            <AnimatedButton
-              onClick={() => setGameState(prev => ({ ...prev, showAchievements: true }))}
-              variant="secondary"
-              size="sm"
-            >
-              <Trophy className="w-4 h-4" />
-            </AnimatedButton>
-            
-            <AnimatedButton
-              onClick={() => setGameState(prev => ({ ...prev, showStats: true }))}
-              variant="secondary"
-              size="sm"
-            >
-              <BarChart3 className="w-4 h-4" />
-            </AnimatedButton>
-          </div>
-        </div>
-
-        {/* Game Area */}
+      <FlashEffect trigger={animations.flashTriggered} />
+      <CongratulatoryAnimation
+        trigger={animations.congratsTriggered}
+        type={animations.congratsType}
+        title={animations.congratsTitle}
+        subtitle={animations.congratsSubtitle}
+      />
+      
+      <AdaptiveUI
+        isFullscreen={isFullscreen}
+        isDarkMode={isDarkMode}
+        headerContent={headerContent}
+        footerContent={footerContent}
+      >
         <div className="flex justify-center">
-          <div 
-            ref={gameContainerRef}
-            className={`relative ${
-              isDarkMode 
-                ? 'bg-gray-800 rounded-2xl p-4' 
-                : ''
-            }`}
+          <ResponsiveGameContainer
+            isDarkMode={isDarkMode}
+            onFullscreenChange={handleFullscreenChange}
           >
-            {/* Game Fullscreen Toggle */}
-            <button
-              onClick={toggleGameFullscreen}
-              className={`absolute -top-2 -right-2 z-10 p-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-110 active:scale-95 ${
-                isDarkMode 
-                  ? 'bg-gray-700 text-white hover:bg-gray-600' 
-                  : 'bg-white/95 text-gray-700 hover:bg-gray-100'
-              }`}
-              title="Fullscreen Game"
-            >
-              <Maximize className="w-4 h-4" />
-            </button>
-            
-            {/* Game Grid */}
-            <div 
-              className={`grid gap-0 p-4 rounded-2xl shadow-2xl border-4 ${
-                isDarkMode 
-                  ? 'bg-gray-900 border-gray-600' 
-                  : `${currentTheme.backgroundColor} ${currentTheme.gridColor}`
-              }`}
-              style={{ 
-                gridTemplateColumns: `repeat(${GRID_SIZE}, 1.25rem)`,
-                gridTemplateRows: `repeat(${GRID_SIZE}, 1.25rem)`
-              }}
-            >
-              {Array.from({ length: GRID_SIZE * GRID_SIZE }).map((_, index) => {
-                const x = index % GRID_SIZE;
-                const y = Math.floor(index / GRID_SIZE);
-                
-                // Check if this cell contains snake head
-                const isSnakeHead = gameState.snake1.segments[0].x === x && gameState.snake1.segments[0].y === y;
-                
-                // Check if this cell contains snake body
-                const isSnakeBody = gameState.snake1.segments.slice(1).some(segment => segment.x === x && segment.y === y);
-                
-                // Check if this cell contains food
-                const isFood = gameState.food.some(food => food.x === x && food.y === y);
-                
-                // Check if this cell contains power-up
-                const powerUp = gameState.powerUps.find(p => p.position.x === x && p.position.y === y);
-                
-                const gridBorderClass = isDarkMode 
-                  ? 'border-gray-700 border-opacity-50' 
-                  : `${currentTheme.gridColor} border-opacity-30`;
-                
-                return (
-                  <div
-                    key={index}
-                    className={`
-                      w-5 h-5 border ${gridBorderClass}
-                      ${isSnakeHead ? currentSkin.headColor + ' transform scale-110 rounded-lg shadow-lg' : ''}
-                      ${isSnakeBody ? currentSkin.bodyColor + ' rounded-md' : ''}
-                      ${isFood ? (isDarkMode ? 'bg-gradient-to-br from-red-400 to-red-600' : currentTheme.foodColor) + ' rounded-full animate-pulse shadow-lg' : ''}
-                      ${powerUp ? `${getPowerUpColor(powerUp.type)} rounded-lg animate-bounce shadow-lg` : ''}
-                    `}
-                  >
-                    {powerUp && (
-                      <div className="w-full h-full flex items-center justify-center text-xs">
-                        {getPowerUpEmoji(powerUp.type)}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            <div className="relative">
+              <AccessibleGameGrid
+                gridSize={GRID_SIZE}
+                snake1={gameState.snake1}
+                snake2={gameState.snake2}
+                food={gameState.food}
+                powerUps={gameState.powerUps}
+                currentTheme={currentTheme}
+                currentSkin={currentSkin}
+                isDarkMode={isDarkMode}
+                isFullscreen={isFullscreen}
+              />
 
             {/* XP Popups */}
             {gameState.xpPopups.map(popup => (
@@ -918,37 +909,21 @@ function App() {
                 </div>
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Game Controls */}
-        <div className="mt-6 flex justify-center">
-          <div className={`backdrop-blur-sm rounded-xl p-4 shadow-lg ${
-            isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
-          }`}>
-            <div className="flex items-center justify-center gap-4">
-              {!gameState.gameRunning && !gameState.gameOver ? (
-                <AnimatedButton onClick={toggleGame}>
-                  <Play className="w-4 h-4 mr-2" />
-                  Start Game
-                </AnimatedButton>
-              ) : gameState.gameRunning ? (
-                <AnimatedButton onClick={toggleGame} variant="secondary">
-                  <Pause className="w-4 h-4 mr-2" />
-                  Pause
-                </AnimatedButton>
-              ) : null}
-              
-              <AnimatedButton onClick={restartGame} variant="secondary">
-                <RotateCcw className="w-4 h-4 mr-2" />
-                Reset
-              </AnimatedButton>
+            
+              {/* Touch Controls */}
+              <TouchControls
+                onDirectionChange={handleTouchDirection}
+                isDarkMode={isDarkMode}
+                isVisible={!gameState.gameOver}
+              />
             </div>
-          </div>
+          </ResponsiveGameContainer>
         </div>
+      </AdaptiveUI>
 
-        {/* Controls Help */}
-        <div className="mt-4">
+      {/* Controls Help */}
+      {!isFullscreen && (
+        <div className="mt-6 px-4">
           <div className={`rounded-xl p-4 mx-auto max-w-2xl ${
             isDarkMode 
               ? 'bg-gradient-to-r from-gray-800 to-gray-700' 
@@ -979,9 +954,11 @@ function App() {
             </div>
           </div>
         </div>
+      )}
 
-        {/* Level Progress */}
-        <div className="mt-6 max-w-md mx-auto">
+      {/* Level Progress */}
+      {!isFullscreen && (
+        <div className="mt-6 max-w-md mx-auto px-4">
           <ProgressBar
             value={gameState.playerStats.xp}
             max={gameState.playerStats.xp + gameState.playerStats.xpToNextLevel}
@@ -990,9 +967,11 @@ function App() {
             animated
           />
         </div>
+      )}
 
-        {/* Quick Upgrades */}
-        <div className="mt-6 max-w-4xl mx-auto">
+      {/* Quick Upgrades */}
+      {!isFullscreen && (
+        <div className="mt-6 max-w-4xl mx-auto px-4">
           <div className={`backdrop-blur-sm rounded-xl p-6 shadow-lg ${
             isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
           }`}>
@@ -1052,9 +1031,10 @@ function App() {
             </div>
           </div>
         </div>
+      )}
 
-        {/* Active Power-ups */}
-        {gameState.snake1.powerUps.length > 0 && (
+      {/* Active Power-ups */}
+      {gameState.snake1.powerUps.length > 0 && !isFullscreen && (
           <div className="mt-4 max-w-md mx-auto">
             <div className={`backdrop-blur-sm rounded-xl p-4 shadow-lg ${
               isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
@@ -1090,8 +1070,8 @@ function App() {
           </div>
         )}
 
-        {/* Modals */}
-        <Shop
+      {/* Modals */}
+      <Shop
           isOpen={gameState.showShop}
           onClose={() => setGameState(prev => ({ ...prev, showShop: false }))}
           playerStats={gameState.playerStats}
@@ -1128,8 +1108,8 @@ function App() {
           onEquipTheme={equipTheme}
         />
 
-        {/* Achievement Toasts */}
-        {gameState.achievementToasts.map(toast => (
+      {/* Achievement Toasts */}
+      {gameState.achievementToasts.map(toast => (
           <AchievementToast
             key={toast.id}
             toast={toast}
@@ -1137,12 +1117,11 @@ function App() {
           />
         ))}
 
-        {/* Particle System */}
-        <ParticleSystem
+      {/* Particle System */}
+      <ParticleSystem
           particles={particles}
           onParticleComplete={handleParticleComplete}
         />
-      </div>
     </ScreenShake>
   );
 }
