@@ -17,7 +17,10 @@ import {
   Gamepad2,
   Users,
   User,
-  Gift
+  Gift,
+  Moon,
+  Sun,
+  Maximize
 } from 'lucide-react';
 
 // Import all components
@@ -77,6 +80,15 @@ import { createSkins, createThemes } from './data/customization';
 import { useGameAnimations } from './hooks/useGameAnimations';
 
 function App() {
+  // Dark mode state
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('snakeDarkMode');
+    return saved ? JSON.parse(saved) : false;
+  });
+
+  // Game container ref for fullscreen
+  const gameContainerRef = useRef<HTMLDivElement>(null);
+
   // Game animation hooks
   const {
     animations,
@@ -90,6 +102,11 @@ function App() {
 
   // Particle system state
   const [particles, setParticles] = useState<any[]>([]);
+
+  // Save dark mode preference
+  useEffect(() => {
+    localStorage.setItem('snakeDarkMode', JSON.stringify(isDarkMode));
+  }, [isDarkMode]);
 
   // Initial game state
   const [gameState, setGameState] = useState<GameState>(() => {
@@ -318,9 +335,12 @@ function App() {
         // Calculate points and XP
         const basePoints = 10;
         const points = Math.floor(basePoints * newState.combo.multiplier);
+        
+        // Ensure score actually increases
         const xp = Math.floor(XP_PER_FOOD * newState.combo.multiplier);
         
         newState.score += points;
+        console.log(`Score increased by ${points}, new score: ${newState.score}`);
         
         // Add XP popup
         newState.xpPopups.push({
@@ -639,6 +659,24 @@ function App() {
     setParticles(prev => prev.filter(p => p.id !== particleId));
   };
 
+  const toggleDarkMode = () => {
+    setIsDarkMode(prev => !prev);
+  };
+
+  const toggleGameFullscreen = async () => {
+    if (!gameContainerRef.current) return;
+    
+    try {
+      if (!document.fullscreenElement) {
+        await gameContainerRef.current.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (error) {
+      console.error('Fullscreen toggle failed:', error);
+    }
+  };
+
   const currentTheme = gameState.themes[gameState.currentTheme];
   const currentSkin = gameState.skins[gameState.currentSkin];
 
@@ -648,8 +686,11 @@ function App() {
       duration={animations.shakeDuration} 
       trigger={animations.shakeTriggered}
     >
-      <div className={`min-h-screen p-4 ${currentTheme.backgroundColor}`}>
-        <FullscreenToggle />
+      <div className={`min-h-screen p-4 transition-colors duration-300 ${
+        isDarkMode 
+          ? 'bg-gray-900' 
+          : currentTheme.backgroundColor
+      }`}>
         <FlashEffect trigger={animations.flashTriggered} />
         <CongratulatoryAnimation
           trigger={animations.congratsTriggered}
@@ -659,20 +700,28 @@ function App() {
         />
         
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className={`flex items-center justify-between mb-6 ${
+          isDarkMode ? 'text-white' : ''
+        }`}>
           {/* Left side - Coins and Level */}
           <div className="flex items-center gap-4">
-            <div className="bg-white/95 backdrop-blur-sm rounded-xl px-4 py-2 shadow-lg">
+            <div className={`backdrop-blur-sm rounded-xl px-4 py-2 shadow-lg ${
+              isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
+            }`}>
               <div className="flex items-center gap-2">
                 <Coins className="w-5 h-5 text-orange-600" />
                 <span className="font-bold text-orange-600">{gameState.playerStats.coins}</span>
               </div>
             </div>
             
-            <div className="bg-white/95 backdrop-blur-sm rounded-xl px-4 py-2 shadow-lg">
+            <div className={`backdrop-blur-sm rounded-xl px-4 py-2 shadow-lg ${
+              isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
+            }`}>
               <div className="flex items-center gap-2">
                 <Star className="w-5 h-5 text-purple-600" />
-                <span className="font-bold text-gray-800">Level {gameState.playerStats.level}</span>
+                <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                  Level {gameState.playerStats.level}
+                </span>
               </div>
             </div>
             
@@ -687,15 +736,30 @@ function App() {
           </div>
 
           {/* Center - Score */}
-          <div className="bg-white/95 backdrop-blur-sm rounded-xl px-6 py-3 shadow-lg">
+          <div className={`backdrop-blur-sm rounded-xl px-6 py-3 shadow-lg ${
+            isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
+          }`}>
             <div className="text-center">
-              <div className="text-2xl font-bold text-gray-800">{gameState.score}</div>
-              <div className="text-sm text-gray-600">Score</div>
+              <div className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                {gameState.score}
+              </div>
+              <div className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                Score
+              </div>
             </div>
           </div>
 
           {/* Right side - Menu buttons */}
           <div className="flex items-center gap-2">
+            <AnimatedButton
+              onClick={toggleDarkMode}
+              variant="secondary"
+              size="sm"
+              title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </AnimatedButton>
+            
             <AnimatedButton
               onClick={() => setGameState(prev => ({ ...prev, showShop: true }))}
               variant="secondary"
@@ -732,10 +796,34 @@ function App() {
 
         {/* Game Area */}
         <div className="flex justify-center">
-          <div className="relative">
+          <div 
+            ref={gameContainerRef}
+            className={`relative ${
+              isDarkMode 
+                ? 'bg-gray-800 rounded-2xl p-4' 
+                : ''
+            }`}
+          >
+            {/* Game Fullscreen Toggle */}
+            <button
+              onClick={toggleGameFullscreen}
+              className={`absolute -top-2 -right-2 z-10 p-2 rounded-xl shadow-lg transition-all duration-300 hover:scale-110 active:scale-95 ${
+                isDarkMode 
+                  ? 'bg-gray-700 text-white hover:bg-gray-600' 
+                  : 'bg-white/95 text-gray-700 hover:bg-gray-100'
+              }`}
+              title="Fullscreen Game"
+            >
+              <Maximize className="w-4 h-4" />
+            </button>
+            
             {/* Game Grid */}
             <div 
-              className={`grid gap-0 ${currentTheme.backgroundColor} p-4 rounded-2xl shadow-2xl border-4 ${currentTheme.gridColor}`}
+              className={`grid gap-0 p-4 rounded-2xl shadow-2xl border-4 ${
+                isDarkMode 
+                  ? 'bg-gray-900 border-gray-600' 
+                  : `${currentTheme.backgroundColor} ${currentTheme.gridColor}`
+              }`}
               style={{ 
                 gridTemplateColumns: `repeat(${GRID_SIZE}, 1.25rem)`,
                 gridTemplateRows: `repeat(${GRID_SIZE}, 1.25rem)`
@@ -757,14 +845,18 @@ function App() {
                 // Check if this cell contains power-up
                 const powerUp = gameState.powerUps.find(p => p.position.x === x && p.position.y === y);
                 
+                const gridBorderClass = isDarkMode 
+                  ? 'border-gray-700 border-opacity-50' 
+                  : `${currentTheme.gridColor} border-opacity-30`;
+                
                 return (
                   <div
                     key={index}
                     className={`
-                      w-5 h-5 border ${currentTheme.gridColor} border-opacity-10
+                      w-5 h-5 border ${gridBorderClass}
                       ${isSnakeHead ? currentSkin.headColor + ' transform scale-110 rounded-lg shadow-lg' : ''}
                       ${isSnakeBody ? currentSkin.bodyColor + ' rounded-md' : ''}
-                      ${isFood ? currentTheme.foodColor + ' rounded-full animate-pulse shadow-lg' : ''}
+                      ${isFood ? (isDarkMode ? 'bg-gradient-to-br from-red-400 to-red-600' : currentTheme.foodColor) + ' rounded-full animate-pulse shadow-lg' : ''}
                       ${powerUp ? `${getPowerUpColor(powerUp.type)} rounded-lg animate-bounce shadow-lg` : ''}
                     `}
                   >
@@ -800,10 +892,18 @@ function App() {
             {/* Game Over Overlay */}
             {gameState.gameOver && (
               <div className="absolute inset-0 bg-black/50 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                <div className="bg-white rounded-xl p-8 text-center shadow-2xl">
-                  <h2 className="text-3xl font-bold text-gray-800 mb-4">Game Over!</h2>
-                  <p className="text-gray-600 mb-2">Final Score: <span className="font-bold text-orange-600">{gameState.score}</span></p>
-                  <p className="text-gray-600 mb-6">Snake Length: <span className="font-bold text-green-600">{gameState.snake1.segments.length}</span></p>
+                <div className={`rounded-xl p-8 text-center shadow-2xl ${
+                  isDarkMode ? 'bg-gray-800' : 'bg-white'
+                }`}>
+                  <h2 className={`text-3xl font-bold mb-4 ${
+                    isDarkMode ? 'text-white' : 'text-gray-800'
+                  }`}>Game Over!</h2>
+                  <p className={`mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                    Final Score: <span className="font-bold text-orange-600">{gameState.score}</span>
+                  </p>
+                  <p className={`mb-6 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                    Snake Length: <span className="font-bold text-green-600">{gameState.snake1.segments.length}</span>
+                  </p>
                   
                   <div className="space-y-3">
                     <AnimatedButton onClick={restartGame} className="w-full">
@@ -811,7 +911,7 @@ function App() {
                       Play Again
                     </AnimatedButton>
                     
-                    <div className="text-sm text-gray-500">
+                    <div className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                       Press Space to restart
                     </div>
                   </div>
@@ -823,7 +923,9 @@ function App() {
 
         {/* Game Controls */}
         <div className="mt-6 flex justify-center">
-          <div className="bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-lg">
+          <div className={`backdrop-blur-sm rounded-xl p-4 shadow-lg ${
+            isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
+          }`}>
             <div className="flex items-center justify-center gap-4">
               {!gameState.gameRunning && !gameState.gameOver ? (
                 <AnimatedButton onClick={toggleGame}>
@@ -847,9 +949,17 @@ function App() {
 
         {/* Controls Help */}
         <div className="mt-4">
-          <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-4 mx-auto max-w-2xl">
-            <h3 className="font-bold text-gray-800 mb-2 text-center">Controls</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
+          <div className={`rounded-xl p-4 mx-auto max-w-2xl ${
+            isDarkMode 
+              ? 'bg-gradient-to-r from-gray-800 to-gray-700' 
+              : 'bg-gradient-to-r from-gray-50 to-gray-100'
+          }`}>
+            <h3 className={`font-bold mb-2 text-center ${
+              isDarkMode ? 'text-white' : 'text-gray-800'
+            }`}>Controls</h3>
+            <div className={`grid grid-cols-2 gap-4 text-sm ${
+              isDarkMode ? 'text-gray-300' : 'text-gray-600'
+            }`}>
               <div>
                 <strong>Snake 1 (Green):</strong>
                 <div className="mt-1">
@@ -883,10 +993,14 @@ function App() {
 
         {/* Quick Upgrades */}
         <div className="mt-6 max-w-4xl mx-auto">
-          <div className="bg-white/95 backdrop-blur-sm rounded-xl p-6 shadow-lg">
+          <div className={`backdrop-blur-sm rounded-xl p-6 shadow-lg ${
+            isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
+          }`}>
             <div className="flex items-center gap-3 mb-4">
               <TrendingUp className="w-6 h-6 text-orange-600" />
-              <h3 className="text-xl font-bold text-gray-800">Quick Upgrades</h3>
+              <h3 className={`text-xl font-bold ${
+                isDarkMode ? 'text-white' : 'text-gray-800'
+              }`}>Quick Upgrades</h3>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -895,17 +1009,27 @@ function App() {
                 const canAfford = gameState.playerStats.coins >= cost;
                 
                 return (
-                  <div key={upgrade.id} className="border border-gray-200 rounded-lg p-4">
+                  <div key={upgrade.id} className={`border rounded-lg p-4 ${
+                    isDarkMode 
+                      ? 'border-gray-600 bg-gray-700/50' 
+                      : 'border-gray-200'
+                  }`}>
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <h4 className="font-semibold text-gray-800">{upgrade.name}</h4>
-                        <p className="text-sm text-gray-600">Lv {upgrade.level}/{upgrade.maxLevel}</p>
+                        <h4 className={`font-semibold ${
+                          isDarkMode ? 'text-white' : 'text-gray-800'
+                        }`}>{upgrade.name}</h4>
+                        <p className={`text-sm ${
+                          isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                        }`}>Lv {upgrade.level}/{upgrade.maxLevel}</p>
                       </div>
                       <div className="text-right">
                         <div className="text-orange-600 font-bold">{cost} XP</div>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-600 mb-3">{upgrade.description}</p>
+                    <p className={`text-sm mb-3 ${
+                      isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                    }`}>{upgrade.description}</p>
                     <AnimatedButton
                       onClick={() => buyUpgrade(upgrade.id)}
                       disabled={!canAfford || upgrade.level >= upgrade.maxLevel}
@@ -920,7 +1044,9 @@ function App() {
             </div>
             
             <div className="mt-4 text-center">
-              <button className="text-orange-600 hover:text-orange-700 text-sm font-semibold">
+              <button className={`hover:text-orange-700 text-sm font-semibold ${
+                isDarkMode ? 'text-orange-400' : 'text-orange-600'
+              }`}>
                 Hide All Upgrades
               </button>
             </div>
@@ -930,17 +1056,27 @@ function App() {
         {/* Active Power-ups */}
         {gameState.snake1.powerUps.length > 0 && (
           <div className="mt-4 max-w-md mx-auto">
-            <div className="bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-lg">
-              <h3 className="font-bold text-gray-800 mb-3 text-center flex items-center justify-center gap-2">
+            <div className={`backdrop-blur-sm rounded-xl p-4 shadow-lg ${
+              isDarkMode ? 'bg-gray-800/95' : 'bg-white/95'
+            }`}>
+              <h3 className={`font-bold mb-3 text-center flex items-center justify-center gap-2 ${
+                isDarkMode ? 'text-white' : 'text-gray-800'
+              }`}>
                 <Zap className="w-5 h-5 text-orange-600" />
                 Power-ups
               </h3>
               <div className="space-y-2">
                 {gameState.snake1.powerUps.map((powerUp, index) => (
-                  <div key={index} className="flex items-center justify-between bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg p-2">
+                  <div key={index} className={`flex items-center justify-between rounded-lg p-2 ${
+                    isDarkMode 
+                      ? 'bg-gradient-to-r from-orange-900/30 to-orange-800/30' 
+                      : 'bg-gradient-to-r from-orange-50 to-orange-100'
+                  }`}>
                     <div className="flex items-center gap-2">
                       <span className="text-lg">{getPowerUpEmoji(powerUp.type)}</span>
-                      <span className="font-semibold text-gray-800 capitalize">
+                      <span className={`font-semibold capitalize ${
+                        isDarkMode ? 'text-white' : 'text-gray-800'
+                      }`}>
                         {powerUp.type.replace('_', ' ')}
                       </span>
                     </div>
