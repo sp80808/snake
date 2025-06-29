@@ -12,9 +12,7 @@ import {
   TrendingUp,
   Gift,
   Coins,
-  Palette,
-  Award,
-  BarChart3
+  Settings
 } from 'lucide-react';
 import { 
   Position, 
@@ -29,7 +27,6 @@ import {
   CoinAnimation,
   Achievement,
   Challenge,
-  AchievementToast,
   SnakeSkin,
   GameTheme
 } from './types';
@@ -49,15 +46,24 @@ import {
   getPowerUpColor
 } from './gameLogic';
 import { createUpgrades, calculateUpgradeCost, canAffordUpgrade, purchaseUpgrade } from './upgrades';
+import { createAchievements, createChallenges } from './data/achievements';
+import { createSkins, createThemes } from './data/customization';
 import { XPPopup as XPPopupComponent } from './components/XPPopup';
 import { CoinAnimation as CoinAnimationComponent } from './components/CoinAnimation';
-import { AchievementToast as AchievementToastComponent } from './components/AchievementToast';
 import { Shop } from './components/Shop';
+import { AchievementToast } from './components/AchievementToast';
 import { Customization } from './components/Customization';
 import { Achievements } from './components/Achievements';
 import { Statistics } from './components/Statistics';
-import { createAchievements, createChallenges } from './data/achievements';
-import { createSkins, createThemes } from './data/customization';
+import { FullscreenToggle } from './components/FullscreenToggle';
+import { ParticleSystem, createFoodParticles, createPowerUpParticles, createAchievementParticles } from './components/ParticleSystem';
+import { ScreenShake } from './components/ScreenShake';
+import { FlashEffect } from './components/FlashEffect';
+import { AnimatedButton } from './components/AnimatedButton';
+import { PulsingElement } from './components/PulsingElement';
+import { ProgressBar } from './components/ProgressBar';
+import { CongratulatoryAnimation } from './components/CongratulatoryAnimation';
+import { useGameAnimations } from './hooks/useGameAnimations';
 
 const INITIAL_SNAKE1: Snake = {
   segments: [{ x: 8, y: 10 }],
@@ -83,14 +89,38 @@ const INITIAL_COMBO: ComboState = {
 const COMBO_TIMEOUT = 3000; // 3 seconds
 const COMBO_MULTIPLIERS = [1, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]; // Multipliers for combo levels
 
+interface Particle {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  color: string;
+  life: number;
+  maxLife: number;
+  type: 'spark' | 'coin' | 'star' | 'circle';
+}
+
 function App() {
+  const { 
+    animations, 
+    triggerShake, 
+    triggerFlash, 
+    triggerGameOver, 
+    triggerPowerUp, 
+    triggerFoodCollected,
+    triggerLevelUp,
+    triggerAchievement,
+    triggerHighScore 
+  } = useGameAnimations();
+
   const [gameState, setGameState] = useState<GameState>(() => {
     const savedStats = localStorage.getItem('snakePlayerStats');
     const savedUpgrades = localStorage.getItem('snakeUpgrades');
     const savedAchievements = localStorage.getItem('snakeAchievements');
     const savedSkins = localStorage.getItem('snakeSkins');
     const savedThemes = localStorage.getItem('snakeThemes');
-    const savedCustomization = localStorage.getItem('snakeCustomization');
     
     const defaultStats: PlayerStats = {
       level: 1,
@@ -103,7 +133,7 @@ function App() {
       totalCoinsEarned: 0,
       totalFoodEaten: 0,
       totalPlayTime: 0,
-      longestSnake: 1,
+      longestSnake: 0,
       totalDeaths: 0,
       averageScore: 0,
       dailyStreak: 0,
@@ -114,10 +144,6 @@ function App() {
     
     // Create upgrades with proper functions first
     const upgrades = createUpgrades();
-    const achievements = createAchievements();
-    const challenges = createChallenges();
-    const skins = createSkins();
-    const themes = createThemes();
     
     // If there are saved upgrades, merge only the level data
     if (savedUpgrades) {
@@ -132,43 +158,38 @@ function App() {
       });
     }
 
-    // Load saved achievements
+    // Initialize achievements
+    const achievements = createAchievements();
     if (savedAchievements) {
       const savedAchievementData = JSON.parse(savedAchievements);
       Object.keys(achievements).forEach(achievementId => {
         if (savedAchievementData[achievementId]) {
-          achievements[achievementId] = {
-            ...achievements[achievementId],
-            unlocked: savedAchievementData[achievementId].unlocked,
-            dateUnlocked: savedAchievementData[achievementId].dateUnlocked
-          };
+          achievements[achievementId] = { ...achievements[achievementId], ...savedAchievementData[achievementId] };
         }
       });
     }
 
-    // Load saved skins and themes
+    // Initialize skins
+    const skins = createSkins();
     if (savedSkins) {
       const savedSkinData = JSON.parse(savedSkins);
       Object.keys(skins).forEach(skinId => {
-        if (savedSkinData[skinId] && savedSkinData[skinId].unlocked !== undefined) {
-          skins[skinId].unlocked = savedSkinData[skinId].unlocked;
+        if (savedSkinData[skinId]) {
+          skins[skinId] = { ...skins[skinId], ...savedSkinData[skinId] };
         }
       });
     }
 
+    // Initialize themes
+    const themes = createThemes();
     if (savedThemes) {
       const savedThemeData = JSON.parse(savedThemes);
       Object.keys(themes).forEach(themeId => {
-        if (savedThemeData[themeId] && savedThemeData[themeId].unlocked !== undefined) {
-          themes[themeId].unlocked = savedThemeData[themeId].unlocked;
+        if (savedThemeData[themeId]) {
+          themes[themeId] = { ...themes[themeId], ...savedThemeData[themeId] };
         }
       });
     }
-
-    const customization = savedCustomization ? JSON.parse(savedCustomization) : {
-      currentSkin: 'default',
-      currentTheme: 'classic'
-    };
 
     return {
       snake1: INITIAL_SNAKE1,
@@ -181,32 +202,39 @@ function App() {
       score: 0,
       playerStats,
       upgrades,
-      achievements,
-      challenges,
-      skins,
-      themes,
       gameSpeed: BASE_GAME_SPEED,
       combo: INITIAL_COMBO,
       xpPopups: [],
       coinAnimations: [],
-      achievementToasts: [],
       showShop: false,
+      achievements,
+      challenges: createChallenges(),
+      achievementToasts: [],
+      skins,
+      themes,
+      skillTree: {
+        speed: { id: 'speed', name: 'Speed', description: 'Increase movement speed', level: 0, maxLevel: 10, cost: 50, effect: (level) => level * 0.1 },
+        agility: { id: 'agility', name: 'Agility', description: 'Improve turning ability', level: 0, maxLevel: 5, cost: 75, effect: (level) => level * 0.2 },
+        efficiency: { id: 'efficiency', name: 'Efficiency', description: 'Better resource usage', level: 0, maxLevel: 8, cost: 60, effect: (level) => level * 0.15 },
+        luck: { id: 'luck', name: 'Luck', description: 'Better power-up spawns', level: 0, maxLevel: 6, cost: 100, effect: (level) => level * 0.25 }
+      },
+      currentTheme: 'classic',
+      currentSkin: 'default',
       showCustomization: false,
       showAchievements: false,
       showStats: false,
-      currentSkin: customization.currentSkin,
-      currentTheme: customization.currentTheme,
       statistics: {
         daily: { gamesPlayed: 0, averageScore: 0, highScore: 0, totalCoins: 0, totalXP: 0, averageCombo: 0, playTime: 0 },
         weekly: { gamesPlayed: 0, averageScore: 0, highScore: 0, totalCoins: 0, totalXP: 0, averageCombo: 0, playTime: 0 },
         monthly: { gamesPlayed: 0, averageScore: 0, highScore: 0, totalCoins: 0, totalXP: 0, averageCombo: 0, playTime: 0 },
         allTime: { gamesPlayed: 0, averageScore: 0, highScore: 0, totalCoins: 0, totalXP: 0, averageCombo: 0, playTime: 0 }
       },
-      gameStartTime: Date.now()
+      gameStartTime: 0
     };
   });
 
   const [showUpgrades, setShowUpgrades] = useState(false);
+  const [particles, setParticles] = useState<Particle[]>([]);
   const gameLoopRef = useRef<NodeJS.Timeout>();
   const animationFrameRef = useRef<number>();
 
@@ -216,11 +244,7 @@ function App() {
     localStorage.setItem('snakeAchievements', JSON.stringify(gameState.achievements));
     localStorage.setItem('snakeSkins', JSON.stringify(gameState.skins));
     localStorage.setItem('snakeThemes', JSON.stringify(gameState.themes));
-    localStorage.setItem('snakeCustomization', JSON.stringify({
-      currentSkin: gameState.currentSkin,
-      currentTheme: gameState.currentTheme
-    }));
-  }, [gameState.playerStats, gameState.upgrades, gameState.achievements, gameState.skins, gameState.themes, gameState.currentSkin, gameState.currentTheme]);
+  }, [gameState.playerStats, gameState.upgrades]);
 
   const calculateComboMultiplier = (comboCount: number): number => {
     const index = Math.min(comboCount, COMBO_MULTIPLIERS.length - 1);
@@ -258,13 +282,21 @@ function App() {
     }));
   }, []);
 
+  const addParticles = useCallback((newParticles: Particle[]) => {
+    setParticles(prev => [...prev, ...newParticles]);
+  }, []);
+
+  const removeParticle = useCallback((id: string) => {
+    setParticles(prev => prev.filter(p => p.id !== id));
+  }, []);
+
   const checkAchievements = useCallback(() => {
     setGameState(prev => {
       const newAchievements = { ...prev.achievements };
-      const newToasts: AchievementToast[] = [];
-      let coinsToAdd = 0;
+      let newToasts = [...prev.achievementToasts];
+      let coinsEarned = 0;
 
-      Object.values(prev.achievements).forEach(achievement => {
+      Object.values(newAchievements).forEach(achievement => {
         if (!achievement.unlocked && achievement.condition(prev.playerStats, prev)) {
           newAchievements[achievement.id] = {
             ...achievement,
@@ -273,35 +305,28 @@ function App() {
           };
           
           newToasts.push({
-            id: `toast-${achievement.id}`,
+            id: `toast-${achievement.id}-${Date.now()}`,
             achievement: newAchievements[achievement.id],
             timestamp: Date.now()
           });
           
-          coinsToAdd += achievement.reward;
+          coinsEarned += achievement.reward;
+          triggerAchievement(achievement.name);
         }
       });
-
-      if (coinsToAdd > 0) {
-        return {
-          ...prev,
-          achievements: newAchievements,
-          achievementToasts: [...prev.achievementToasts, ...newToasts],
-          playerStats: {
-            ...prev.playerStats,
-            coins: prev.playerStats.coins + coinsToAdd,
-            totalCoinsEarned: prev.playerStats.totalCoinsEarned + coinsToAdd
-          }
-        };
-      }
 
       return {
         ...prev,
         achievements: newAchievements,
-        achievementToasts: [...prev.achievementToasts, ...newToasts]
+        achievementToasts: newToasts,
+        playerStats: {
+          ...prev.playerStats,
+          coins: prev.playerStats.coins + coinsEarned,
+          totalCoinsEarned: prev.playerStats.totalCoinsEarned + coinsEarned
+        }
       };
     });
-  }, []);
+  }, [triggerAchievement]);
 
   const updateCombo = useCallback(() => {
     const currentTime = Date.now();
@@ -319,6 +344,7 @@ function App() {
       return prev;
     });
   }, []);
+
   const resetGame = () => {
     setGameState(prev => ({
       ...prev,
@@ -332,7 +358,6 @@ function App() {
       gameSpeed: BASE_GAME_SPEED - (prev.upgrades.speed.level * prev.upgrades.speed.effect(prev.upgrades.speed.level)),
       combo: INITIAL_COMBO,
       xpPopups: [],
-      coinAnimations: [],
       gameStartTime: Date.now()
     }));
   };
@@ -353,6 +378,7 @@ function App() {
     setGameState(prev => ({
       ...prev,
       gameRunning: true,
+      gameStartTime: Date.now(),
       playerStats: {
         ...prev.playerStats,
         gamesPlayed: prev.playerStats.gamesPlayed + 1
@@ -360,13 +386,27 @@ function App() {
     }));
   };
 
+  const checkLevelUp = useCallback((newXP: number, oldXP: number) => {
+    const newLevel = calculateLevel(newXP);
+    const oldLevel = calculateLevel(oldXP);
+    
+    if (newLevel > oldLevel) {
+      triggerLevelUp(newLevel);
+      triggerFlash();
+    }
+  }, [triggerLevelUp, triggerFlash]);
+
   const addXP = useCallback((amount: number) => {
     setGameState(prev => {
       const xpMultiplier = prev.upgrades.xpBonus.effect(prev.upgrades.xpBonus.level);
       const actualXP = Math.floor(amount * xpMultiplier);
       const newTotalXp = prev.playerStats.totalXp + actualXP;
+      const oldTotalXp = prev.playerStats.totalXp;
       const newLevel = calculateLevel(newTotalXp);
       const newXpToNext = getXpToNextLevel(newLevel, newTotalXp);
+
+      // Check for level up
+      setTimeout(() => checkLevelUp(newTotalXp, oldTotalXp), 100);
 
       return {
         ...prev,
@@ -381,6 +421,15 @@ function App() {
     });
   }, []);
 
+  const checkHighScore = useCallback((newScore: number) => {
+    setGameState(prev => {
+      if (newScore > prev.playerStats.highScore) {
+        triggerHighScore(newScore);
+      }
+      return prev;
+    });
+  }, [triggerHighScore]);
+
   const incrementCombo = useCallback((foodX: number, foodY: number) => {
     const currentTime = Date.now();
     setGameState(prev => {
@@ -388,6 +437,10 @@ function App() {
       const newMultiplier = calculateComboMultiplier(newCount);
       const newMaxCombo = Math.max(prev.combo.maxCombo, newCount);
       
+      // Add coin animation for combo
+      if (newCount > 1) {
+        addCoinAnimation(foodX * 20, foodY * 20, newCount);
+      }
       return {
         ...prev,
         combo: {
@@ -398,7 +451,7 @@ function App() {
         }
       };
     });
-  }, []);
+  }, [addCoinAnimation]);
 
   const awardCoins = useCallback((score: number, combo: ComboState) => {
     setGameState(prev => {
@@ -411,10 +464,65 @@ function App() {
         ...prev,
         playerStats: {
           ...prev.playerStats,
-          coins: prev.playerStats.coins + totalCoins
+          coins: prev.playerStats.coins + totalCoins,
+          totalCoinsEarned: prev.playerStats.totalCoinsEarned + totalCoins
         }
       };
     });
+  }, []);
+
+  const handleSkinPurchase = useCallback((skinId: string) => {
+    setGameState(prev => {
+      const skin = prev.skins[skinId];
+      if (prev.playerStats.coins >= skin.price && !skin.unlocked) {
+        return {
+          ...prev,
+          skins: {
+            ...prev.skins,
+            [skinId]: { ...skin, unlocked: true }
+          },
+          playerStats: {
+            ...prev.playerStats,
+            coins: prev.playerStats.coins - skin.price
+          }
+        };
+      }
+      return prev;
+    });
+  }, []);
+
+  const handleThemePurchase = useCallback((themeId: string) => {
+    setGameState(prev => {
+      const theme = prev.themes[themeId];
+      if (prev.playerStats.coins >= theme.price && !theme.unlocked) {
+        return {
+          ...prev,
+          themes: {
+            ...prev.themes,
+            [themeId]: { ...theme, unlocked: true }
+          },
+          playerStats: {
+            ...prev.playerStats,
+            coins: prev.playerStats.coins - theme.price
+          }
+        };
+      }
+      return prev;
+    });
+  }, []);
+
+  const handleSkinEquip = useCallback((skinId: string) => {
+    setGameState(prev => ({
+      ...prev,
+      currentSkin: skinId
+    }));
+  }, []);
+
+  const handleThemeEquip = useCallback((themeId: string) => {
+    setGameState(prev => ({
+      ...prev,
+      currentTheme: themeId
+    }));
   }, []);
 
   const handleShopPurchase = useCallback((itemId: string, cost: number) => {
@@ -457,6 +565,7 @@ function App() {
       };
     });
   }, []);
+
   const applyPowerUp = useCallback((snake: Snake, powerUpType: PowerUpType): Snake => {
     const duration = 300 * gameState.upgrades.powerUpDuration.effect(gameState.upgrades.powerUpDuration.level);
     
@@ -499,29 +608,47 @@ function App() {
       // Check wall collisions
       if (checkWallCollision(newSnake1.segments[0])) {
         const hasShield = newSnake1.powerUps.some(p => p.type === PowerUpType.SHIELD);
-        if (!hasShield) gameOver = true;
+        if (!hasShield) {
+          gameOver = true;
+          triggerGameOver();
+        }
       }
 
       if (newSnake2 && checkWallCollision(newSnake2.segments[0])) {
         const hasShield = newSnake2.powerUps.some(p => p.type === PowerUpType.SHIELD);
-        if (!hasShield) gameOver = true;
+        if (!hasShield) {
+          gameOver = true;
+          triggerGameOver();
+        }
       }
 
       // Check self collision
       if (checkCollision(newSnake1.segments[0], newSnake1.segments.slice(1))) {
         const hasInvincibility = newSnake1.powerUps.some(p => p.type === PowerUpType.INVINCIBILITY);
-        if (!hasInvincibility) gameOver = true;
+        if (!hasInvincibility) {
+          gameOver = true;
+          triggerGameOver();
+        }
       }
 
       if (newSnake2 && checkCollision(newSnake2.segments[0], newSnake2.segments.slice(1))) {
         const hasInvincibility = newSnake2.powerUps.some(p => p.type === PowerUpType.INVINCIBILITY);
-        if (!hasInvincibility) gameOver = true;
+        if (!hasInvincibility) {
+          gameOver = true;
+          triggerGameOver();
+        }
       }
 
       // Check snake-to-snake collision
       if (newSnake2) {
-        if (checkCollision(newSnake1.segments[0], newSnake2.segments)) gameOver = true;
-        if (checkCollision(newSnake2.segments[0], newSnake1.segments)) gameOver = true;
+        if (checkCollision(newSnake1.segments[0], newSnake2.segments)) {
+          gameOver = true;
+          triggerGameOver();
+        }
+        if (checkCollision(newSnake2.segments[0], newSnake1.segments)) {
+          gameOver = true;
+          triggerGameOver();
+        }
       }
 
       // Check food collision for snake 1
@@ -530,12 +657,21 @@ function App() {
       );
       
       if (foodIndex1 !== -1) {
+        // Trigger food collection effects
+        triggerFoodCollected();
+        addParticles(createFoodParticles(newSnake1.segments[0].x * 20, newSnake1.segments[0].y * 20));
+        
         newFood.splice(foodIndex1, 1);
         const scoreMultiplier = prev.upgrades.scoreMultiplier.effect(prev.upgrades.scoreMultiplier.level);
         const doubleScore = newSnake1.powerUps.some(p => p.type === PowerUpType.DOUBLE_SCORE);
         const comboMultiplier = prev.combo.multiplier;
         const points = Math.floor(10 * scoreMultiplier * (doubleScore ? 2 : 1) * comboMultiplier);
         newScore += points;
+        
+        // Check for high score
+        if (newScore > prev.playerStats.highScore) {
+          checkHighScore(newScore);
+        }
         
         // Calculate XP with combo bonus
         const baseXP = XP_PER_FOOD;
@@ -547,12 +683,6 @@ function App() {
         
         // Increment combo
         incrementCombo(newSnake1.segments[0].x, newSnake1.segments[0].y);
-        
-        // Add coin animation
-        if (prev.combo.count > 0) {
-          const coinValue = Math.floor(1 + (prev.combo.multiplier - 1) * 2);
-          addCoinAnimation(newSnake1.segments[0].x, newSnake1.segments[0].y, coinValue);
-        }
         
         // Generate new food
         const snakes = [newSnake1, ...(newSnake2 ? [newSnake2] : [])];
@@ -568,12 +698,21 @@ function App() {
         );
         
         if (foodIndex2 !== -1) {
+          // Trigger food collection effects
+          triggerFoodCollected();
+          addParticles(createFoodParticles(newSnake2.segments[0].x * 20, newSnake2.segments[0].y * 20));
+          
           newFood.splice(foodIndex2, 1);
           const scoreMultiplier = prev.upgrades.scoreMultiplier.effect(prev.upgrades.scoreMultiplier.level);
           const doubleScore = newSnake2.powerUps.some(p => p.type === PowerUpType.DOUBLE_SCORE);
           const comboMultiplier = prev.combo.multiplier;
           const points = Math.floor(10 * scoreMultiplier * (doubleScore ? 2 : 1) * comboMultiplier);
           newScore += points;
+          
+          // Check for high score
+          if (newScore > prev.playerStats.highScore) {
+            checkHighScore(newScore);
+          }
           
           // Calculate XP with combo bonus
           const baseXP = XP_PER_FOOD;
@@ -585,12 +724,6 @@ function App() {
           
           // Increment combo
           incrementCombo(newSnake2.segments[0].x, newSnake2.segments[0].y);
-          
-          // Add coin animation
-          if (prev.combo.count > 0) {
-            const coinValue = Math.floor(1 + (prev.combo.multiplier - 1) * 2);
-            addCoinAnimation(newSnake2.segments[0].x, newSnake2.segments[0].y, coinValue);
-          }
           
           // Generate new food
           const snakes = [newSnake1, newSnake2];
@@ -610,12 +743,16 @@ function App() {
 
         if (snake1Hit) {
           newSnake1 = applyPowerUp(newSnake1, powerUp.type);
+          triggerPowerUp();
+          addParticles(createPowerUpParticles(powerUp.position.x * 20, powerUp.position.y * 20));
           addXP(XP_PER_POWER_UP);
           return false;
         }
         
         if (snake2Hit) {
           newSnake2 = applyPowerUp(newSnake2!, powerUp.type);
+          triggerPowerUp();
+          addParticles(createPowerUpParticles(powerUp.position.x * 20, powerUp.position.y * 20));
           addXP(XP_PER_POWER_UP);
           return false;
         }
@@ -645,22 +782,14 @@ function App() {
         newPlayerStats = { ...newPlayerStats, highScore: newScore };
       }
 
+      // Update food eaten count
+      const foodEaten = (foodIndex1 !== -1 ? 1 : 0) + (foodIndex2 !== -1 ? 1 : 0);
+      newPlayerStats = { ...newPlayerStats, totalFoodEaten: newPlayerStats.totalFoodEaten + foodEaten };
+      
       if (gameOver) {
+        newPlayerStats = { ...newPlayerStats, totalDeaths: newPlayerStats.totalDeaths + 1 };
         // Award coins based on performance before ending game
         awardCoins(newScore, prev.combo);
-        
-        // Update statistics
-        const gameTime = (Date.now() - prev.gameStartTime) / 1000;
-        const newPlayerStats = {
-          ...newPlayerStats,
-          totalPlayTime: newPlayerStats.totalPlayTime + gameTime,
-          totalDeaths: newPlayerStats.totalDeaths + 1,
-          averageScore: newPlayerStats.gamesPlayed > 0 
-            ? Math.round(((newPlayerStats.averageScore * (newPlayerStats.gamesPlayed - 1)) + newScore) / newPlayerStats.gamesPlayed)
-            : newScore,
-          longestSnake: Math.max(newPlayerStats.longestSnake, newSnake1.segments.length),
-          totalFoodEaten: newPlayerStats.totalFoodEaten + Math.floor(newScore / 10)
-        };
         
         return {
           ...prev,
@@ -680,7 +809,7 @@ function App() {
         playerStats: newPlayerStats
       };
     });
-  }, [addXP, applyPowerUp, updatePowerUps, addXPPopup, incrementCombo, awardCoins, addCoinAnimation]);
+  }, [addXP, applyPowerUp, updatePowerUps, addXPPopup, incrementCombo, awardCoins, triggerFoodCollected, triggerPowerUp, triggerGameOver, addParticles, checkHighScore]);
 
   // Animation loop for updating popups and combo timer
   const animationLoop = useCallback(() => {
@@ -724,12 +853,10 @@ function App() {
     animationFrameRef.current = requestAnimationFrame(animationLoop);
   }, []);
 
-  const removeAchievementToast = useCallback((toastId: string) => {
-    setGameState(prev => ({
-      ...prev,
-      achievementToasts: prev.achievementToasts.filter(toast => toast.id !== toastId)
-    }));
-  }, []);
+  // Check achievements periodically
+  useEffect(() => {
+    checkAchievements();
+  }, [gameState.playerStats, gameState.score, gameState.combo, checkAchievements]);
 
   const handleKeyPress = useCallback((e: KeyboardEvent) => {
     if (!gameState.gameRunning && !gameState.gameOver) return;
@@ -830,60 +957,6 @@ function App() {
     });
   };
 
-  const handlePurchaseSkin = (skinId: string) => {
-    setGameState(prev => {
-      const skin = prev.skins[skinId];
-      if (prev.playerStats.coins >= skin.price && !skin.unlocked) {
-        return {
-          ...prev,
-          skins: {
-            ...prev.skins,
-            [skinId]: { ...skin, unlocked: true }
-          },
-          playerStats: {
-            ...prev.playerStats,
-            coins: prev.playerStats.coins - skin.price
-          }
-        };
-      }
-      return prev;
-    });
-  };
-
-  const handlePurchaseTheme = (themeId: string) => {
-    setGameState(prev => {
-      const theme = prev.themes[themeId];
-      if (prev.playerStats.coins >= theme.price && !theme.unlocked) {
-        return {
-          ...prev,
-          themes: {
-            ...prev.themes,
-            [themeId]: { ...theme, unlocked: true }
-          },
-          playerStats: {
-            ...prev.playerStats,
-            coins: prev.playerStats.coins - theme.price
-          }
-        };
-      }
-      return prev;
-    });
-  };
-
-  const handleEquipSkin = (skinId: string) => {
-    setGameState(prev => ({
-      ...prev,
-      currentSkin: skinId
-    }));
-  };
-
-  const handleEquipTheme = (themeId: string) => {
-    setGameState(prev => ({
-      ...prev,
-      currentTheme: themeId
-    }));
-  };
-
   useEffect(() => {
     if (gameState.gameRunning) {
       const hasSpeedBoost = gameState.snake1.powerUps.some(p => p.type === PowerUpType.SPEED_BOOST) ||
@@ -918,17 +991,12 @@ function App() {
 
   useEffect(() => {
     saveProgress();
-    checkAchievements();
   }, [saveProgress]);
 
-  useEffect(() => {
-    checkAchievements();
-  }, [checkAchievements, gameState.score, gameState.playerStats.level, gameState.combo.maxCombo]);
+  const currentTheme = gameState.themes[gameState.currentTheme];
+  const currentSkin = gameState.skins[gameState.currentSkin];
 
   const renderCell = (x: number, y: number) => {
-    const currentSkin = gameState.skins[gameState.currentSkin];
-    const currentTheme = gameState.themes[gameState.currentTheme];
-    
     const isSnake1Head = gameState.snake1.segments[0]?.x === x && gameState.snake1.segments[0]?.y === y;
     const isSnake1Body = gameState.snake1.segments.slice(1).some(segment => segment.x === x && segment.y === y);
     const isSnake2Head = gameState.snake2?.segments[0]?.x === x && gameState.snake2?.segments[0]?.y === y;
@@ -941,7 +1009,7 @@ function App() {
     if (isSnake1Head) {
       className += `${currentSkin.headColor} shadow-lg transform scale-110 relative`;
     } else if (isSnake1Body) {
-      className += currentSkin.bodyColor;
+      className += `${currentSkin.bodyColor}`;
     } else if (isSnake2Head) {
       className += `bg-gradient-to-br ${gameState.snake2!.color} shadow-lg transform scale-110`;
     } else if (isSnake2Body) {
@@ -951,7 +1019,7 @@ function App() {
     } else if (powerUp) {
       className += `bg-gradient-to-br ${getPowerUpColor(powerUp.type)} shadow-lg animate-bounce rounded-full flex items-center justify-center text-xs`;
     } else {
-      className += 'bg-gray-50/50';
+      className += 'bg-white/20';
     }
     
     return (
@@ -971,12 +1039,17 @@ function App() {
   };
 
   return (
-    <div className={`min-h-screen ${gameState.themes[gameState.currentTheme].backgroundColor} p-4`}>
+    <ScreenShake intensity={animations.shakeIntensity} duration={animations.shakeDuration} trigger={animations.shakeTriggered}>
+      <div className={`min-h-screen ${currentTheme.backgroundColor} p-4 transition-all duration-500`}>
       <div className="max-w-7xl mx-auto">
+        {/* Fullscreen Toggle */}
+        <FullscreenToggle />
+        
         {/* Top Bar with Coins */}
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-4">
-            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-6 py-3">
+            <PulsingElement isActive={gameState.playerStats.coins > 0}>
+              <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-6 py-3">
               <div className="flex items-center gap-3">
                 <Coins className="w-6 h-6 text-orange-600" />
                 <div>
@@ -985,10 +1058,12 @@ function App() {
                 </div>
               </div>
             </div>
+            </PulsingElement>
             
             {/* Combo Display */}
             {gameState.combo.count > 0 && (
-              <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl shadow-xl px-6 py-3">
+              <PulsingElement isActive={true} color="orange" intensity={0.5}>
+                <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl shadow-xl px-6 py-3">
                 <div className="flex items-center gap-3 text-white">
                   <Zap className="w-6 h-6" />
                   <div>
@@ -1000,50 +1075,29 @@ function App() {
                   </div>
                 </div>
               </div>
+              </PulsingElement>
             )}
           </div>
           
-          <div className="flex gap-2">
-            <button
+          <div className="flex items-center gap-3">
+            <AnimatedButton
               onClick={() => setGameState(prev => ({ ...prev, showCustomization: true }))}
-              className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-4 py-3 hover:scale-105 transition-transform"
+              variant="secondary"
+              size="md"
             >
-              <div className="flex items-center gap-2">
-                <Palette className="w-5 h-5 text-orange-600" />
-                <span className="font-semibold text-gray-800 hidden sm:inline">Style</span>
-              </div>
-            </button>
+              <Settings className="w-5 h-5" />
+              Customize
+            </AnimatedButton>
             
-            <button
-              onClick={() => setGameState(prev => ({ ...prev, showAchievements: true }))}
-              className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-4 py-3 hover:scale-105 transition-transform"
-            >
-              <div className="flex items-center gap-2">
-                <Award className="w-5 h-5 text-orange-600" />
-                <span className="font-semibold text-gray-800 hidden sm:inline">Awards</span>
-              </div>
-            </button>
-            
-            <button
-              onClick={() => setGameState(prev => ({ ...prev, showStats: true }))}
-              className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-4 py-3 hover:scale-105 transition-transform"
-            >
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-orange-600" />
-                <span className="font-semibold text-gray-800 hidden sm:inline">Stats</span>
-              </div>
-            </button>
-            
-            <button
+            <AnimatedButton
               onClick={() => setGameState(prev => ({ ...prev, showShop: true }))}
-              className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-4 py-3 hover:scale-105 transition-transform"
+              variant="primary"
+              size="md"
             >
-              <div className="flex items-center gap-2">
-                <ShoppingCart className="w-5 h-5 text-orange-600" />
-                <span className="font-semibold text-gray-800 hidden sm:inline">Shop</span>
-              </div>
-            </button>
-          </div>
+              <ShoppingCart className="w-5 h-5" />
+              Shop
+            </AnimatedButton>
+            </div>
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -1064,14 +1118,14 @@ function App() {
                     <span>Level {gameState.playerStats.level}</span>
                     <span>{gameState.playerStats.xp} XP</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                    <div 
-                      className="bg-gradient-to-r from-orange-500 to-orange-600 h-2 rounded-full transition-all duration-300"
-                      style={{ 
-                        width: `${Math.max(0, Math.min(100, (gameState.playerStats.xp / (gameState.playerStats.xp + gameState.playerStats.xpToNextLevel)) * 100))}%` 
-                      }}
-                    ></div>
-                  </div>
+                  <ProgressBar
+                    value={gameState.playerStats.xp}
+                    max={gameState.playerStats.xp + gameState.playerStats.xpToNextLevel}
+                    color="orange"
+                    height="h-2"
+                    animated={true}
+                    className="mt-1"
+                  />
                   <div className="text-xs text-gray-500 mt-1">
                     {gameState.playerStats.xpToNextLevel} XP to next level
                   </div>
@@ -1090,43 +1144,6 @@ function App() {
               </div>
             </div>
 
-            {/* Daily Challenges */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl">
-                  <Target className="w-6 h-6 text-white" />
-                </div>
-                <h2 className="text-xl font-bold text-gray-800">Daily Challenge</h2>
-              </div>
-              
-              {Object.values(gameState.challenges).filter(c => c.type === 'daily' && !c.completed)[0] && (
-                <div className="space-y-2">
-                  {(() => {
-                    const challenge = Object.values(gameState.challenges).filter(c => c.type === 'daily' && !c.completed)[0];
-                    const progress = challenge.progress(gameState.playerStats, gameState);
-                    const progressPercent = Math.min((progress.current / progress.target) * 100, 100);
-                    
-                    return (
-                      <div>
-                        <div className="text-sm font-medium">{challenge.name}</div>
-                        <div className="text-xs text-gray-600 mb-2">{challenge.description}</div>
-                        <div className="w-full bg-gray-200 rounded-full h-2 mb-1">
-                          <div 
-                            className="bg-gradient-to-r from-orange-500 to-orange-600 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${progressPercent}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-600">{progress.current}/{progress.target}</span>
-                          <span className="text-orange-600 font-semibold">+{challenge.reward.coins} coins</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
-
             {/* Quick Upgrades */}
             <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-6">
               <div className="flex items-center gap-3 mb-4">
@@ -1143,23 +1160,26 @@ function App() {
                       <div className="text-sm font-medium">{upgrade.name}</div>
                       <div className="text-xs text-gray-600">Lv.{upgrade.level}/{upgrade.maxLevel}</div>
                     </div>
-                    <button
+                    <AnimatedButton
                       onClick={() => buyUpgrade(upgrade.id)}
                       disabled={!canAffordUpgrade(upgrade, gameState.playerStats.xp)}
-                      className="px-3 py-1 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-xs rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform"
+                      size="sm"
+                      variant="primary"
                     >
                       {calculateUpgradeCost(upgrade)} XP
-                    </button>
+                    </AnimatedButton>
                   </div>
                 ))}
               </div>
               
-              <button
+              <AnimatedButton
                 onClick={() => setShowUpgrades(!showUpgrades)}
-                className="w-full mt-4 px-4 py-2 bg-gradient-to-r from-black to-gray-800 text-white text-sm rounded-lg hover:scale-105 transition-transform"
+                variant="secondary"
+                size="md"
+                className="w-full mt-4"
               >
                 {showUpgrades ? 'Hide' : 'Show'} All Upgrades
-              </button>
+              </AnimatedButton>
             </div>
 
             {/* Power-ups Status */}
@@ -1249,7 +1269,7 @@ function App() {
               {/* Game Board */}
               <div className="relative mb-6">
                 <div 
-                  className={`grid gap-1 ${gameState.themes[gameState.currentTheme].gridColor} border-2 p-4 rounded-2xl shadow-inner mx-auto`}
+                  className={`grid gap-1 ${currentTheme.gridColor} p-4 rounded-2xl shadow-inner mx-auto border-2`}
                   style={{ 
                     gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                     aspectRatio: '1/1',
@@ -1262,6 +1282,15 @@ function App() {
                     return renderCell(x, y);
                   })}
                   
+                  {/* Coin Animations */}
+                  {gameState.coinAnimations.map(animation => (
+                    <CoinAnimationComponent
+                      key={animation.id}
+                      animation={animation}
+                      gridSize={GRID_SIZE}
+                    />
+                  ))}
+                  
                   {/* XP Popups */}
                   {gameState.xpPopups.map(popup => (
                     <XPPopupComponent
@@ -1269,15 +1298,6 @@ function App() {
                       popup={popup}
                       gridSize={GRID_SIZE}
                       cellSize={20}
-                    />
-                  ))}
-                  
-                  {/* Coin Animations */}
-                  {gameState.coinAnimations.map(animation => (
-                    <CoinAnimationComponent
-                      key={animation.id}
-                      animation={animation}
-                      gridSize={GRID_SIZE}
                     />
                   ))}
                 </div>
@@ -1288,12 +1308,13 @@ function App() {
                     <div className="bg-white rounded-2xl p-8 text-center shadow-2xl">
                       <h2 className="text-3xl font-bold text-gray-800 mb-4">Game Over!</h2>
                       <p className="text-gray-600 mb-6">Final Score: <span className="font-bold text-orange-600">{gameState.score}</span></p>
-                      <button
+                      <AnimatedButton
                         onClick={startGame}
-                        className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-8 py-3 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg"
+                        variant="primary"
+                        size="lg"
                       >
                         Play Again
-                      </button>
+                      </AnimatedButton>
                     </div>
                   </div>
                 )}
@@ -1302,21 +1323,25 @@ function App() {
               {/* Controls */}
               <div className="text-center">
                 {!gameState.gameRunning && !gameState.gameOver ? (
-                  <button
+                  <AnimatedButton
                     onClick={startGame}
-                    className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg flex items-center gap-3 mx-auto mb-6"
+                    variant="primary"
+                    size="lg"
+                    className="mx-auto mb-6"
                   >
-                    <Play className="w-5 h-5" />
+                    <Play className="w-6 h-6" />
                     Start Game
-                  </button>
+                  </AnimatedButton>
                 ) : (
-                  <button
+                  <AnimatedButton
                     onClick={resetGame}
-                    className="bg-gradient-to-r from-black to-gray-800 hover:from-gray-900 hover:to-black text-white px-6 py-3 rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 shadow-lg flex items-center gap-2 mx-auto mb-6"
+                    variant="secondary"
+                    size="md"
+                    className="mx-auto mb-6"
                   >
-                    <RotateCcw className="w-4 h-4" />
+                    <RotateCcw className="w-5 h-5" />
                     Reset
-                  </button>
+                  </AnimatedButton>
                 )}
                 
                 {/* Instructions */}
@@ -1395,25 +1420,39 @@ function App() {
                             Level {upgrade.level}/{upgrade.maxLevel}
                           </div>
                         </div>
-                        <button
+                        <AnimatedButton
                           onClick={() => buyUpgrade(upgrade.id)}
                           disabled={!canAffordUpgrade(upgrade, gameState.playerStats.xp)}
-                          className="px-3 py-1 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-xs rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform"
+                          size="sm"
+                          variant="primary"
                         >
                           {upgrade.level >= upgrade.maxLevel ? 'MAX' : `${calculateUpgradeCost(upgrade)} XP`}
-                        </button>
+                        </AnimatedButton>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1">
-                        <div 
-                          className="bg-gradient-to-r from-orange-500 to-orange-600 h-1 rounded-full"
-                          style={{ width: `${(upgrade.level / upgrade.maxLevel) * 100}%` }}
-                        ></div>
-                      </div>
+                      <ProgressBar
+                        value={upgrade.level}
+                        max={upgrade.maxLevel}
+                        color="orange"
+                        height="h-1"
+                        animated={false}
+                      />
                     </div>
                   ))}
                 </div>
               </div>
             )}
+
+            {/* Quick Access Buttons */}
+            <div className="space-y-2">
+              <AnimatedButton onClick={() => setGameState(prev => ({ ...prev, showAchievements: true }))} variant="secondary" size="md" className="w-full">
+                <Trophy className="w-5 h-5" />
+                Achievements
+              </AnimatedButton>
+              <AnimatedButton onClick={() => setGameState(prev => ({ ...prev, showStats: true }))} variant="secondary" size="md" className="w-full">
+                <BarChart3 className="w-5 h-5" />
+                Statistics
+              </AnimatedButton>
+            </div>
 
             {/* Power-up Guide */}
             <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-6">
@@ -1454,13 +1493,33 @@ function App() {
           </div>
         </div>
         
-        {/* Shop Modal */}
-        <Shop
-          isOpen={gameState.showShop}
-          onClose={() => setGameState(prev => ({ ...prev, showShop: false }))}
-          playerStats={gameState.playerStats}
-          onPurchase={handleShopPurchase}
+        {/* Particle System */}
+        <ParticleSystem particles={particles} onParticleComplete={removeParticle} />
+        
+        {/* Flash Effect */}
+        <FlashEffect trigger={animations.flashTriggered} />
+        
+        {/* Congratulatory Animation */}
+        <CongratulatoryAnimation
+          trigger={animations.congratsTriggered}
+          type={animations.congratsType}
+          title={animations.congratsTitle}
+          subtitle={animations.congratsSubtitle}
         />
+        
+        {/* Achievement Toasts */}
+        {gameState.achievementToasts.map(toast => (
+          <AchievementToast
+            key={toast.id}
+            toast={toast}
+            onComplete={() => {
+              setGameState(prev => ({
+                ...prev,
+                achievementToasts: prev.achievementToasts.filter(t => t.id !== toast.id)
+              }));
+            }}
+          />
+        ))}
         
         {/* Customization Modal */}
         <Customization
@@ -1471,10 +1530,10 @@ function App() {
           currentSkin={gameState.currentSkin}
           currentTheme={gameState.currentTheme}
           playerStats={gameState.playerStats}
-          onPurchaseSkin={handlePurchaseSkin}
-          onPurchaseTheme={handlePurchaseTheme}
-          onEquipSkin={handleEquipSkin}
-          onEquipTheme={handleEquipTheme}
+          onPurchaseSkin={handleSkinPurchase}
+          onPurchaseTheme={handleThemePurchase}
+          onEquipSkin={handleSkinEquip}
+          onEquipTheme={handleThemeEquip}
         />
         
         {/* Achievements Modal */}
@@ -1495,16 +1554,16 @@ function App() {
           playerStats={gameState.playerStats}
         />
         
-        {/* Achievement Toasts */}
-        {gameState.achievementToasts.map(toast => (
-          <AchievementToastComponent
-            key={toast.id}
-            toast={toast}
-            onComplete={() => removeAchievementToast(toast.id)}
-          />
-        ))}
+        {/* Shop Modal */}
+        <Shop
+          isOpen={gameState.showShop}
+          onClose={() => setGameState(prev => ({ ...prev, showShop: false }))}
+          playerStats={gameState.playerStats}
+          onPurchase={handleShopPurchase}
+        />
       </div>
     </div>
+    </ScreenShake>
   );
 }
 
