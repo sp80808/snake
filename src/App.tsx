@@ -28,7 +28,7 @@ import { Customization } from './components/Customization';
 import { AchievementToast } from './components/AchievementToast';
 import { AnimatedButton } from './components/AnimatedButton';
 import { ProgressBar } from './components/ProgressBar';
-import { XPPopup } from './components/XPPopup';
+import { XPPopup as XPPopupComponent } from './components/XPPopup';
 import { CoinAnimation } from './components/CoinAnimation';
 import { FullscreenToggle } from './components/FullscreenToggle';
 import { ScreenShake } from './components/ScreenShake';
@@ -780,7 +780,7 @@ function App() {
 
             {/* XP Popups */}
             {gameState.xpPopups.map(popup => (
-              <XPPopup
+              <XPPopupComponent
                 key={popup.id}
                 popup={popup}
                 gridSize={GRID_SIZE}
