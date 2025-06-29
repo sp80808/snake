@@ -11,7 +11,10 @@ import {
   Zap,
   TrendingUp,
   Gift,
-  Coins
+  Coins,
+  Palette,
+  Award,
+  BarChart3
 } from 'lucide-react';
 import { 
   Position, 
@@ -22,7 +25,13 @@ import {
   PlayerStats,
   ActivePowerUp,
   ComboState,
-  XPPopup
+  XPPopup,
+  CoinAnimation,
+  Achievement,
+  Challenge,
+  AchievementToast,
+  SnakeSkin,
+  GameTheme
 } from './types';
 import { 
   GRID_SIZE, 
@@ -41,7 +50,14 @@ import {
 } from './gameLogic';
 import { createUpgrades, calculateUpgradeCost, canAffordUpgrade, purchaseUpgrade } from './upgrades';
 import { XPPopup as XPPopupComponent } from './components/XPPopup';
+import { CoinAnimation as CoinAnimationComponent } from './components/CoinAnimation';
+import { AchievementToast as AchievementToastComponent } from './components/AchievementToast';
 import { Shop } from './components/Shop';
+import { Customization } from './components/Customization';
+import { Achievements } from './components/Achievements';
+import { Statistics } from './components/Statistics';
+import { createAchievements, createChallenges } from './data/achievements';
+import { createSkins, createThemes } from './data/customization';
 
 const INITIAL_SNAKE1: Snake = {
   segments: [{ x: 8, y: 10 }],
@@ -71,6 +87,10 @@ function App() {
   const [gameState, setGameState] = useState<GameState>(() => {
     const savedStats = localStorage.getItem('snakePlayerStats');
     const savedUpgrades = localStorage.getItem('snakeUpgrades');
+    const savedAchievements = localStorage.getItem('snakeAchievements');
+    const savedSkins = localStorage.getItem('snakeSkins');
+    const savedThemes = localStorage.getItem('snakeThemes');
+    const savedCustomization = localStorage.getItem('snakeCustomization');
     
     const defaultStats: PlayerStats = {
       level: 1,
@@ -79,13 +99,25 @@ function App() {
       totalXp: 0,
       gamesPlayed: 0,
       highScore: 0,
-      coins: 0
+      coins: 0,
+      totalCoinsEarned: 0,
+      totalFoodEaten: 0,
+      totalPlayTime: 0,
+      longestSnake: 1,
+      totalDeaths: 0,
+      averageScore: 0,
+      dailyStreak: 0,
+      lastPlayDate: new Date().toDateString()
     };
 
     const playerStats = savedStats ? JSON.parse(savedStats) : defaultStats;
     
     // Create upgrades with proper functions first
     const upgrades = createUpgrades();
+    const achievements = createAchievements();
+    const challenges = createChallenges();
+    const skins = createSkins();
+    const themes = createThemes();
     
     // If there are saved upgrades, merge only the level data
     if (savedUpgrades) {
@@ -100,6 +132,44 @@ function App() {
       });
     }
 
+    // Load saved achievements
+    if (savedAchievements) {
+      const savedAchievementData = JSON.parse(savedAchievements);
+      Object.keys(achievements).forEach(achievementId => {
+        if (savedAchievementData[achievementId]) {
+          achievements[achievementId] = {
+            ...achievements[achievementId],
+            unlocked: savedAchievementData[achievementId].unlocked,
+            dateUnlocked: savedAchievementData[achievementId].dateUnlocked
+          };
+        }
+      });
+    }
+
+    // Load saved skins and themes
+    if (savedSkins) {
+      const savedSkinData = JSON.parse(savedSkins);
+      Object.keys(skins).forEach(skinId => {
+        if (savedSkinData[skinId] && savedSkinData[skinId].unlocked !== undefined) {
+          skins[skinId].unlocked = savedSkinData[skinId].unlocked;
+        }
+      });
+    }
+
+    if (savedThemes) {
+      const savedThemeData = JSON.parse(savedThemes);
+      Object.keys(themes).forEach(themeId => {
+        if (savedThemeData[themeId] && savedThemeData[themeId].unlocked !== undefined) {
+          themes[themeId].unlocked = savedThemeData[themeId].unlocked;
+        }
+      });
+    }
+
+    const customization = savedCustomization ? JSON.parse(savedCustomization) : {
+      currentSkin: 'default',
+      currentTheme: 'classic'
+    };
+
     return {
       snake1: INITIAL_SNAKE1,
       snake2: null,
@@ -111,10 +181,28 @@ function App() {
       score: 0,
       playerStats,
       upgrades,
+      achievements,
+      challenges,
+      skins,
+      themes,
       gameSpeed: BASE_GAME_SPEED,
       combo: INITIAL_COMBO,
       xpPopups: [],
-      showShop: false
+      coinAnimations: [],
+      achievementToasts: [],
+      showShop: false,
+      showCustomization: false,
+      showAchievements: false,
+      showStats: false,
+      currentSkin: customization.currentSkin,
+      currentTheme: customization.currentTheme,
+      statistics: {
+        daily: { gamesPlayed: 0, averageScore: 0, highScore: 0, totalCoins: 0, totalXP: 0, averageCombo: 0, playTime: 0 },
+        weekly: { gamesPlayed: 0, averageScore: 0, highScore: 0, totalCoins: 0, totalXP: 0, averageCombo: 0, playTime: 0 },
+        monthly: { gamesPlayed: 0, averageScore: 0, highScore: 0, totalCoins: 0, totalXP: 0, averageCombo: 0, playTime: 0 },
+        allTime: { gamesPlayed: 0, averageScore: 0, highScore: 0, totalCoins: 0, totalXP: 0, averageCombo: 0, playTime: 0 }
+      },
+      gameStartTime: Date.now()
     };
   });
 
@@ -125,7 +213,14 @@ function App() {
   const saveProgress = useCallback(() => {
     localStorage.setItem('snakePlayerStats', JSON.stringify(gameState.playerStats));
     localStorage.setItem('snakeUpgrades', JSON.stringify(gameState.upgrades));
-  }, [gameState.playerStats, gameState.upgrades]);
+    localStorage.setItem('snakeAchievements', JSON.stringify(gameState.achievements));
+    localStorage.setItem('snakeSkins', JSON.stringify(gameState.skins));
+    localStorage.setItem('snakeThemes', JSON.stringify(gameState.themes));
+    localStorage.setItem('snakeCustomization', JSON.stringify({
+      currentSkin: gameState.currentSkin,
+      currentTheme: gameState.currentTheme
+    }));
+  }, [gameState.playerStats, gameState.upgrades, gameState.achievements, gameState.skins, gameState.themes, gameState.currentSkin, gameState.currentTheme]);
 
   const calculateComboMultiplier = (comboCount: number): number => {
     const index = Math.min(comboCount, COMBO_MULTIPLIERS.length - 1);
@@ -146,6 +241,66 @@ function App() {
       ...prev,
       xpPopups: [...prev.xpPopups, popup]
     }));
+  }, []);
+
+  const addCoinAnimation = useCallback((x: number, y: number, value: number) => {
+    const animation: CoinAnimation = {
+      id: `coin-${Date.now()}-${Math.random()}`,
+      x,
+      y,
+      value,
+      timestamp: Date.now()
+    };
+    
+    setGameState(prev => ({
+      ...prev,
+      coinAnimations: [...prev.coinAnimations, animation]
+    }));
+  }, []);
+
+  const checkAchievements = useCallback(() => {
+    setGameState(prev => {
+      const newAchievements = { ...prev.achievements };
+      const newToasts: AchievementToast[] = [];
+      let coinsToAdd = 0;
+
+      Object.values(prev.achievements).forEach(achievement => {
+        if (!achievement.unlocked && achievement.condition(prev.playerStats, prev)) {
+          newAchievements[achievement.id] = {
+            ...achievement,
+            unlocked: true,
+            dateUnlocked: new Date().toISOString()
+          };
+          
+          newToasts.push({
+            id: `toast-${achievement.id}`,
+            achievement: newAchievements[achievement.id],
+            timestamp: Date.now()
+          });
+          
+          coinsToAdd += achievement.reward;
+        }
+      });
+
+      if (coinsToAdd > 0) {
+        return {
+          ...prev,
+          achievements: newAchievements,
+          achievementToasts: [...prev.achievementToasts, ...newToasts],
+          playerStats: {
+            ...prev.playerStats,
+            coins: prev.playerStats.coins + coinsToAdd,
+            totalCoinsEarned: prev.playerStats.totalCoinsEarned + coinsToAdd
+          }
+        };
+      }
+
+      return {
+        ...prev,
+        achievements: newAchievements,
+        achievementToasts: [...prev.achievementToasts, ...newToasts]
+      };
+    });
   }, []);
 
   const updateCombo = useCallback(() => {
@@ -176,7 +331,9 @@ function App() {
       score: 0,
       gameSpeed: BASE_GAME_SPEED - (prev.upgrades.speed.level * prev.upgrades.speed.effect(prev.upgrades.speed.level)),
       combo: INITIAL_COMBO,
-      xpPopups: []
+      xpPopups: [],
+      coinAnimations: [],
+      gameStartTime: Date.now()
     }));
   };
 
@@ -391,6 +548,12 @@ function App() {
         // Increment combo
         incrementCombo(newSnake1.segments[0].x, newSnake1.segments[0].y);
         
+        // Add coin animation
+        if (prev.combo.count > 0) {
+          const coinValue = Math.floor(1 + (prev.combo.multiplier - 1) * 2);
+          addCoinAnimation(newSnake1.segments[0].x, newSnake1.segments[0].y, coinValue);
+        }
+        
         // Generate new food
         const snakes = [newSnake1, ...(newSnake2 ? [newSnake2] : [])];
         newFood.push(generateFood(snakes, newFood));
@@ -422,6 +585,12 @@ function App() {
           
           // Increment combo
           incrementCombo(newSnake2.segments[0].x, newSnake2.segments[0].y);
+          
+          // Add coin animation
+          if (prev.combo.count > 0) {
+            const coinValue = Math.floor(1 + (prev.combo.multiplier - 1) * 2);
+            addCoinAnimation(newSnake2.segments[0].x, newSnake2.segments[0].y, coinValue);
+          }
           
           // Generate new food
           const snakes = [newSnake1, newSnake2];
@@ -480,6 +649,19 @@ function App() {
         // Award coins based on performance before ending game
         awardCoins(newScore, prev.combo);
         
+        // Update statistics
+        const gameTime = (Date.now() - prev.gameStartTime) / 1000;
+        const newPlayerStats = {
+          ...newPlayerStats,
+          totalPlayTime: newPlayerStats.totalPlayTime + gameTime,
+          totalDeaths: newPlayerStats.totalDeaths + 1,
+          averageScore: newPlayerStats.gamesPlayed > 0 
+            ? Math.round(((newPlayerStats.averageScore * (newPlayerStats.gamesPlayed - 1)) + newScore) / newPlayerStats.gamesPlayed)
+            : newScore,
+          longestSnake: Math.max(newPlayerStats.longestSnake, newSnake1.segments.length),
+          totalFoodEaten: newPlayerStats.totalFoodEaten + Math.floor(newScore / 10)
+        };
+        
         return {
           ...prev,
           gameOver: true,
@@ -498,7 +680,7 @@ function App() {
         playerStats: newPlayerStats
       };
     });
-  }, [addXP, applyPowerUp, updatePowerUps, addXPPopup, incrementCombo, awardCoins]);
+  }, [addXP, applyPowerUp, updatePowerUps, addXPPopup, incrementCombo, awardCoins, addCoinAnimation]);
 
   // Animation loop for updating popups and combo timer
   const animationLoop = useCallback(() => {
@@ -508,6 +690,16 @@ function App() {
       // Filter out expired popups
       const activePopups = prev.xpPopups.filter(popup => 
         currentTime - popup.timestamp < 1500
+      );
+      
+      // Filter out expired coin animations
+      const activeCoinAnimations = prev.coinAnimations.filter(animation =>
+        currentTime - animation.timestamp < 2000
+      );
+      
+      // Filter out expired achievement toasts
+      const activeToasts = prev.achievementToasts.filter(toast =>
+        currentTime - toast.timestamp < 5000
       );
       
       // Check if combo should expire
@@ -523,11 +715,20 @@ function App() {
       return {
         ...prev,
         xpPopups: activePopups,
+        coinAnimations: activeCoinAnimations,
+        achievementToasts: activeToasts,
         combo: newCombo
       };
     });
     
     animationFrameRef.current = requestAnimationFrame(animationLoop);
+  }, []);
+
+  const removeAchievementToast = useCallback((toastId: string) => {
+    setGameState(prev => ({
+      ...prev,
+      achievementToasts: prev.achievementToasts.filter(toast => toast.id !== toastId)
+    }));
   }, []);
 
   const handleKeyPress = useCallback((e: KeyboardEvent) => {
@@ -629,6 +830,60 @@ function App() {
     });
   };
 
+  const handlePurchaseSkin = (skinId: string) => {
+    setGameState(prev => {
+      const skin = prev.skins[skinId];
+      if (prev.playerStats.coins >= skin.price && !skin.unlocked) {
+        return {
+          ...prev,
+          skins: {
+            ...prev.skins,
+            [skinId]: { ...skin, unlocked: true }
+          },
+          playerStats: {
+            ...prev.playerStats,
+            coins: prev.playerStats.coins - skin.price
+          }
+        };
+      }
+      return prev;
+    });
+  };
+
+  const handlePurchaseTheme = (themeId: string) => {
+    setGameState(prev => {
+      const theme = prev.themes[themeId];
+      if (prev.playerStats.coins >= theme.price && !theme.unlocked) {
+        return {
+          ...prev,
+          themes: {
+            ...prev.themes,
+            [themeId]: { ...theme, unlocked: true }
+          },
+          playerStats: {
+            ...prev.playerStats,
+            coins: prev.playerStats.coins - theme.price
+          }
+        };
+      }
+      return prev;
+    });
+  };
+
+  const handleEquipSkin = (skinId: string) => {
+    setGameState(prev => ({
+      ...prev,
+      currentSkin: skinId
+    }));
+  };
+
+  const handleEquipTheme = (themeId: string) => {
+    setGameState(prev => ({
+      ...prev,
+      currentTheme: themeId
+    }));
+  };
+
   useEffect(() => {
     if (gameState.gameRunning) {
       const hasSpeedBoost = gameState.snake1.powerUps.some(p => p.type === PowerUpType.SPEED_BOOST) ||
@@ -663,9 +918,17 @@ function App() {
 
   useEffect(() => {
     saveProgress();
+    checkAchievements();
   }, [saveProgress]);
 
+  useEffect(() => {
+    checkAchievements();
+  }, [checkAchievements, gameState.score, gameState.playerStats.level, gameState.combo.maxCombo]);
+
   const renderCell = (x: number, y: number) => {
+    const currentSkin = gameState.skins[gameState.currentSkin];
+    const currentTheme = gameState.themes[gameState.currentTheme];
+    
     const isSnake1Head = gameState.snake1.segments[0]?.x === x && gameState.snake1.segments[0]?.y === y;
     const isSnake1Body = gameState.snake1.segments.slice(1).some(segment => segment.x === x && segment.y === y);
     const isSnake2Head = gameState.snake2?.segments[0]?.x === x && gameState.snake2?.segments[0]?.y === y;
@@ -676,15 +939,15 @@ function App() {
     let className = 'aspect-square rounded-sm transition-all duration-150 ';
     
     if (isSnake1Head) {
-      className += `bg-gradient-to-br ${gameState.snake1.color} shadow-lg transform scale-110 relative`;
+      className += `${currentSkin.headColor} shadow-lg transform scale-110 relative`;
     } else if (isSnake1Body) {
-      className += `bg-gradient-to-br from-emerald-300 to-emerald-500`;
+      className += currentSkin.bodyColor;
     } else if (isSnake2Head) {
       className += `bg-gradient-to-br ${gameState.snake2!.color} shadow-lg transform scale-110`;
     } else if (isSnake2Body) {
       className += `bg-gradient-to-br from-blue-300 to-blue-500`;
     } else if (isFood) {
-      className += 'bg-gradient-to-br from-red-400 to-red-600 shadow-lg animate-pulse rounded-full';
+      className += `${currentTheme.foodColor} shadow-lg animate-pulse rounded-full`;
     } else if (powerUp) {
       className += `bg-gradient-to-br ${getPowerUpColor(powerUp.type)} shadow-lg animate-bounce rounded-full flex items-center justify-center text-xs`;
     } else {
@@ -708,7 +971,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black p-4">
+    <div className={`min-h-screen ${gameState.themes[gameState.currentTheme].backgroundColor} p-4`}>
       <div className="max-w-7xl mx-auto">
         {/* Top Bar with Coins */}
         <div className="flex justify-between items-center mb-6">
@@ -740,15 +1003,47 @@ function App() {
             )}
           </div>
           
-          <button
-            onClick={() => setGameState(prev => ({ ...prev, showShop: true }))}
-            className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-6 py-3 hover:scale-105 transition-transform"
-          >
-            <div className="flex items-center gap-3">
-              <ShoppingCart className="w-6 h-6 text-orange-600" />
-              <span className="font-semibold text-gray-800">Shop</span>
-            </div>
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setGameState(prev => ({ ...prev, showCustomization: true }))}
+              className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-4 py-3 hover:scale-105 transition-transform"
+            >
+              <div className="flex items-center gap-2">
+                <Palette className="w-5 h-5 text-orange-600" />
+                <span className="font-semibold text-gray-800 hidden sm:inline">Style</span>
+              </div>
+            </button>
+            
+            <button
+              onClick={() => setGameState(prev => ({ ...prev, showAchievements: true }))}
+              className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-4 py-3 hover:scale-105 transition-transform"
+            >
+              <div className="flex items-center gap-2">
+                <Award className="w-5 h-5 text-orange-600" />
+                <span className="font-semibold text-gray-800 hidden sm:inline">Awards</span>
+              </div>
+            </button>
+            
+            <button
+              onClick={() => setGameState(prev => ({ ...prev, showStats: true }))}
+              className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-4 py-3 hover:scale-105 transition-transform"
+            >
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-orange-600" />
+                <span className="font-semibold text-gray-800 hidden sm:inline">Stats</span>
+              </div>
+            </button>
+            
+            <button
+              onClick={() => setGameState(prev => ({ ...prev, showShop: true }))}
+              className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl px-4 py-3 hover:scale-105 transition-transform"
+            >
+              <div className="flex items-center gap-2">
+                <ShoppingCart className="w-5 h-5 text-orange-600" />
+                <span className="font-semibold text-gray-800 hidden sm:inline">Shop</span>
+              </div>
+            </button>
+          </div>
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -793,6 +1088,43 @@ function App() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Daily Challenges */}
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl">
+                  <Target className="w-6 h-6 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-800">Daily Challenge</h2>
+              </div>
+              
+              {Object.values(gameState.challenges).filter(c => c.type === 'daily' && !c.completed)[0] && (
+                <div className="space-y-2">
+                  {(() => {
+                    const challenge = Object.values(gameState.challenges).filter(c => c.type === 'daily' && !c.completed)[0];
+                    const progress = challenge.progress(gameState.playerStats, gameState);
+                    const progressPercent = Math.min((progress.current / progress.target) * 100, 100);
+                    
+                    return (
+                      <div>
+                        <div className="text-sm font-medium">{challenge.name}</div>
+                        <div className="text-xs text-gray-600 mb-2">{challenge.description}</div>
+                        <div className="w-full bg-gray-200 rounded-full h-2 mb-1">
+                          <div 
+                            className="bg-gradient-to-r from-orange-500 to-orange-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${progressPercent}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">{progress.current}/{progress.target}</span>
+                          <span className="text-orange-600 font-semibold">+{challenge.reward.coins} coins</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
 
             {/* Quick Upgrades */}
@@ -917,7 +1249,7 @@ function App() {
               {/* Game Board */}
               <div className="relative mb-6">
                 <div 
-                  className="grid gap-1 bg-gradient-to-br from-gray-100 to-gray-200 p-4 rounded-2xl shadow-inner mx-auto"
+                  className={`grid gap-1 ${gameState.themes[gameState.currentTheme].gridColor} border-2 p-4 rounded-2xl shadow-inner mx-auto`}
                   style={{ 
                     gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                     aspectRatio: '1/1',
@@ -937,6 +1269,15 @@ function App() {
                       popup={popup}
                       gridSize={GRID_SIZE}
                       cellSize={20}
+                    />
+                  ))}
+                  
+                  {/* Coin Animations */}
+                  {gameState.coinAnimations.map(animation => (
+                    <CoinAnimationComponent
+                      key={animation.id}
+                      animation={animation}
+                      gridSize={GRID_SIZE}
                     />
                   ))}
                 </div>
@@ -1120,6 +1461,48 @@ function App() {
           playerStats={gameState.playerStats}
           onPurchase={handleShopPurchase}
         />
+        
+        {/* Customization Modal */}
+        <Customization
+          isOpen={gameState.showCustomization}
+          onClose={() => setGameState(prev => ({ ...prev, showCustomization: false }))}
+          skins={gameState.skins}
+          themes={gameState.themes}
+          currentSkin={gameState.currentSkin}
+          currentTheme={gameState.currentTheme}
+          playerStats={gameState.playerStats}
+          onPurchaseSkin={handlePurchaseSkin}
+          onPurchaseTheme={handlePurchaseTheme}
+          onEquipSkin={handleEquipSkin}
+          onEquipTheme={handleEquipTheme}
+        />
+        
+        {/* Achievements Modal */}
+        <Achievements
+          isOpen={gameState.showAchievements}
+          onClose={() => setGameState(prev => ({ ...prev, showAchievements: false }))}
+          achievements={gameState.achievements}
+          challenges={gameState.challenges}
+          playerStats={gameState.playerStats}
+          gameState={gameState}
+        />
+        
+        {/* Statistics Modal */}
+        <Statistics
+          isOpen={gameState.showStats}
+          onClose={() => setGameState(prev => ({ ...prev, showStats: false }))}
+          statistics={gameState.statistics}
+          playerStats={gameState.playerStats}
+        />
+        
+        {/* Achievement Toasts */}
+        {gameState.achievementToasts.map(toast => (
+          <AchievementToastComponent
+            key={toast.id}
+            toast={toast}
+            onComplete={() => removeAchievementToast(toast.id)}
+          />
+        ))}
       </div>
     </div>
   );
