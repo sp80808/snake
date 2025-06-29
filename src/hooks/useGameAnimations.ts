@@ -62,7 +62,7 @@ export const useGameAnimations = () => {
     triggerShake(3, 200);
   }, [triggerFlash, triggerShake]);
 
-  const triggerFoodCollected = useCallback() => {
+  const triggerFoodCollected = useCallback(() => {
     triggerShake(2, 100);
   }, [triggerShake]);
 

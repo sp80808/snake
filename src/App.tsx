@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
+import { Play, Pause, RotateCcw, Settings, ShoppingCart, Trophy, BarChart3, Palette, Coins, Star, Zap, Shield, TrendingUp, Target } from 'lucide-react';
   Play, 
   RotateCcw, 
   Trophy, 
